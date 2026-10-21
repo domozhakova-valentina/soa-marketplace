@@ -1,3 +1,4 @@
 packageName: marketplace_api
 sourceFolder: src
 hideGenerationTimestamp: true
+templateDir: openapi/templates

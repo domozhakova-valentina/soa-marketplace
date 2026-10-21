@@ -9,3 +9,11 @@ pydantic_core==2.27.2
 starlette==0.41.3
 typing_extensions==4.16.0
 uvicorn==0.34.0
+SQLAlchemy==2.0.41
+psycopg[binary]==3.2.9
+simplejson==3.20.1
+PyJWT==2.10.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
+cffi==2.1.1
+pycparser==3.11

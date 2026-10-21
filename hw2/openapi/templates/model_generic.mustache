@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+import re
+from decimal import Decimal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, field_validator
+from typing import Any, ClassVar, Dict, List, Optional, Union, Self
+from typing_extensions import Annotated
+{{#vendorExtensions.x-py-datetime-imports}}{{#-first}}from datetime import{{/-first}} {{{.}}}{{^-last}},{{/-last}}{{/vendorExtensions.x-py-datetime-imports}}
+{{#vendorExtensions.x-py-pydantic-imports}}{{#-first}}from pydantic import{{/-first}} {{{.}}}{{^-last}},{{/-last}}{{/vendorExtensions.x-py-pydantic-imports}}
+{{#vendorExtensions.x-py-other-imports}}
+{{{.}}}
+{{/vendorExtensions.x-py-other-imports}}
+{{#vendorExtensions.x-py-model-imports}}
+{{{.}}}
+{{/vendorExtensions.x-py-model-imports}}
+
+from app.contract_http import dumps_contract, loads_contract
+
+
+class {{classname}}(BaseModel):
+    """{{classname}} generated from the OpenAPI schema."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        validate_assignment=True,
+        protected_namespaces=(),
+        extra="{{#isAdditionalPropertiesTrue}}allow{{/isAdditionalPropertiesTrue}}{{^isAdditionalPropertiesTrue}}forbid{{/isAdditionalPropertiesTrue}}",
+    )
+
+{{#vars}}
+{{#isNumber}}
+    {{name}}: {{#isNullable}}Optional[{{/isNullable}}Annotated[Decimal, Field(allow_inf_nan=False{{#minimum}}, {{#exclusiveMinimum}}gt{{/exclusiveMinimum}}{{^exclusiveMinimum}}ge{{/exclusiveMinimum}}=Decimal("{{minimum}}"){{/minimum}}{{#maximum}}, {{#exclusiveMaximum}}lt{{/exclusiveMaximum}}{{^exclusiveMaximum}}le{{/exclusiveMaximum}}=Decimal("{{maximum}}"){{/maximum}}{{#multipleOf}}, multiple_of=Decimal("{{multipleOf}}"){{/multipleOf}}), WithJsonSchema({"type": "number", "format": "decimal"{{#minimum}}, "minimum": {{minimum}}{{/minimum}}{{#maximum}}, "maximum": {{maximum}}{{/maximum}}{{#multipleOf}}, "multipleOf": {{multipleOf}}{{/multipleOf}}})]{{#isNullable}}]{{/isNullable}}{{^required}} = {{#defaultValue}}{{{defaultValue}}}{{/defaultValue}}{{^defaultValue}}None{{/defaultValue}}{{/required}}
+{{/isNumber}}
+{{^isNumber}}{{#isUuid}}
+    {{name}}: {{#required}}{{#isNullable}}Optional[UUID]{{/isNullable}}{{^isNullable}}UUID{{/isNullable}}{{/required}}{{^required}}Optional[UUID] = None{{/required}}
+{{/isUuid}}{{^isUuid}}
+    {{name}}: {{{vendorExtensions.x-py-typing}}}
+{{/isUuid}}{{/isNumber}}
+{{/vars}}
+
+{{#vars}}
+{{^isNullable}}
+    @field_validator("{{name}}", mode="before")
+    @classmethod
+    def reject_null_{{name}}(cls, value):
+        # Missing optional fields keep their default; explicit null is different.
+        if value is None:
+            raise ValueError("null is not allowed")
+        return value
+
+{{/isNullable}}
+{{#isNumber}}
+    @field_validator("{{name}}", mode="before")
+    @classmethod
+    def validate_number_{{name}}(cls, value):
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (Decimal, int, float)):
+            raise ValueError("a JSON number is required")
+        return Decimal(str(value))
+
+{{/isNumber}}
+{{#vendorExtensions.x-regex}}
+    @field_validator("{{{name}}}")
+    @classmethod
+    def validate_pattern_{{{name}}}(cls, value):
+        # Contract patterns are anchored; fullmatch also rejects a final newline.
+        if value is not None and re.fullmatch(r"{{{.}}}", value) is None:
+            raise ValueError("value does not match the required pattern")
+        return value
+
+{{/vendorExtensions.x-regex}}
+{{#isEnum}}
+    @field_validator("{{name}}")
+    @classmethod
+    def validate_enum_{{name}}(cls, value):
+        if value is not None and value not in ({{#allowableValues}}{{#enumVars}}{{{value}}}, {{/enumVars}}{{/allowableValues}}):
+            raise ValueError("value is not in the allowed enum")
+        return value
+
+{{/isEnum}}
+{{#vendorExtensions.x-unique-by}}
+    @field_validator("{{name}}")
+    @classmethod
+    def validate_unique_{{name}}(cls, value):
+        if value is not None:
+            keys = [getattr(item, "{{.}}") for item in value]
+            if len(keys) != len(set(keys)):
+                raise ValueError("{{.}} values must be unique")
+        return value
+
+{{/vendorExtensions.x-unique-by}}
+{{/vars}}
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump(mode="python", by_alias=True, exclude_unset=True)
+
+    def to_json(self) -> str:
+        return dumps_contract(self.to_dict())
+
+    def to_str(self) -> str:
+        return str(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, value: Dict[str, Any]) -> Self:
+        return cls.model_validate(value)
+
+    @classmethod
+    def from_json(cls, value: str) -> Self:
+        return cls.model_validate(loads_contract(value))

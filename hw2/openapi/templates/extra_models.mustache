@@ -1,0 +1,9 @@
+# Generated support model for the authenticated JWT principal. Do not edit.
+from pydantic import BaseModel, ConfigDict
+from {{modelPackage}}.user_role import UserRole
+
+
+class TokenModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    sub: str
+    role: UserRole

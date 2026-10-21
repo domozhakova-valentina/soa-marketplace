@@ -1,0 +1,32 @@
+# Generated from OpenAPI using the project templates. Do not edit.
+from typing import ClassVar, Dict, List, Tuple
+from uuid import UUID
+from pydantic import BeforeValidator
+from app.contract_http import query_integer
+from {{modelPackage}}.extra_models import TokenModel
+
+{{#imports}}
+{{{import}}}
+{{/imports}}
+
+
+class Base{{classname}}:
+    subclasses: ClassVar[Tuple] = ()
+
+    def __init__(self, token_BearerAuth: TokenModel | None = None):
+        self.token_BearerAuth = token_BearerAuth
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        Base{{classname}}.subclasses += (cls,)
+
+{{#operations}}{{#operation}}
+    async def {{operationId}}(
+        self,
+{{#allParams}}
+        {{>impl_argument_definition}},
+{{/allParams}}
+    ) -> {{returnType}}{{^returnType}}None{{/returnType}}:
+        raise NotImplementedError
+
+{{/operation}}{{/operations}}

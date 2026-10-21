@@ -1,0 +1,1 @@
+{{#isUuid}}UUID{{/isUuid}}{{^isUuid}}{{#isQueryParam}}{{#isInteger}}Annotated[int, BeforeValidator(query_integer)]{{/isInteger}}{{^isInteger}}{{{vendorExtensions.x-py-typing}}}{{/isInteger}}{{/isQueryParam}}{{^isQueryParam}}{{{vendorExtensions.x-py-typing}}}{{/isQueryParam}}{{/isUuid}}

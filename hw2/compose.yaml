@@ -1,12 +1,62 @@
 services:
+  db:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-marketplace}
+      POSTGRES_USER: ${POSTGRES_USER:-marketplace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marketplace_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  flyway:
+    image: flyway/flyway:11.8.1
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-marketplace}
+      FLYWAY_USER: ${POSTGRES_USER:-marketplace}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-marketplace_dev_password}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+      REDGATE_DISABLE_TELEMETRY: "true"
+    volumes:
+      - ./migrations:/flyway/sql:ro
+    command:
+      - migrate
+    restart: "no"
+
   api:
     build:
       context: .
+    depends_on:
+      db:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-marketplace}
+      DB_USER: ${POSTGRES_USER:-marketplace}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-marketplace_dev_password}
+      JWT_SECRET: ${JWT_SECRET:?Run scripts/init-env.ps1 from hw2 first}
+      ORDER_CREATE_INTERVAL_MINUTES: ${ORDER_CREATE_INTERVAL_MINUTES:-5}
+      ORDER_UPDATE_INTERVAL_MINUTES: ${ORDER_UPDATE_INTERVAL_MINUTES:-5}
     ports:
       - "${API_PORT:-8000}:8000"
 
   codegen:
     image: openapitools/openapi-generator-cli:v7.12.0
+    working_dir: /workspace
     profiles:
       - tools
     volumes:
@@ -21,3 +71,61 @@ services:
       - /workspace/openapi/generator-config.yaml
       - -o
       - /workspace/generated
+
+  test:
+    build:
+      context: .
+      target: test
+    profiles:
+      - tools
+
+  db-test:
+    image: postgres:17.6
+    profiles:
+      - tools
+    environment:
+      POSTGRES_DB: marketplace_test
+      POSTGRES_USER: marketplace_test
+      POSTGRES_PASSWORD: marketplace_test_password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U marketplace_test -d marketplace_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  flyway-test:
+    image: flyway/flyway:11.8.1
+    profiles:
+      - tools
+    depends_on:
+      db-test:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db-test:5432/marketplace_test
+      FLYWAY_USER: marketplace_test
+      FLYWAY_PASSWORD: marketplace_test_password
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+      REDGATE_DISABLE_TELEMETRY: "true"
+    volumes:
+      - ./migrations:/flyway/sql:ro
+    command: ["migrate"]
+    restart: "no"
+
+  test-integration:
+    build:
+      context: .
+      target: test
+    profiles:
+      - tools
+    depends_on:
+      flyway-test:
+        condition: service_completed_successfully
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg://marketplace_test:marketplace_test_password@db-test:5432/marketplace_test
+    command: ["python", "-m", "pytest", "-q", "tests/test_products_postgres.py", "tests/test_auth_postgres.py", "tests/test_orders_postgres.py", "tests/test_order_locks_postgres.py", "tests/test_order_mutations_postgres.py", "tests/test_promo_codes_postgres.py"]
+
+volumes:
+  postgres_data:

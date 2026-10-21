@@ -1,0 +1,67 @@
+# Generated from OpenAPI using the project templates. Do not edit.
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+import importlib
+import pkgutil
+
+from fastapi import APIRouter, Body, Cookie, Depends, Form, Header, HTTPException, Path, Query, Response, Security
+from pydantic import BeforeValidator, Field
+from typing_extensions import Annotated
+from {{modelPackage}}.extra_models import TokenModel
+from {{apiPackage}}.{{classFilename}}_{{baseSuffix}} import Base{{classname}}
+import {{fastapiImplementationPackage}}
+{{#imports}}
+{{{import}}}
+{{/imports}}
+{{#securityImports.0}}from {{packageName}}.security_api import {{#securityImports}}get_token_{{.}}{{^-last}}, {{/-last}}{{/securityImports}}{{/securityImports.0}}
+from app.contract_http import ContractRoute, contract_response, query_integer
+from app.security.authorization import require_roles
+
+
+router = APIRouter(route_class=ContractRoute)
+ns_pkg = {{fastapiImplementationPackage}}
+for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
+    importlib.import_module(name)
+
+{{#operations}}{{#operation}}
+@router.{{#lambda.lowercase}}{{httpMethod}}{{/lambda.lowercase}}(
+    "{{{path}}}",
+    status_code={{#responses}}{{#is2xx}}{{code}}{{/is2xx}}{{/responses}},
+    response_model={{returnType}}{{^returnType}}None{{/returnType}},
+    responses={
+{{#responses}}
+        {{code}}: {{=<% %>=}}{<%#dataType%>"model": <%dataType%>, <%/dataType%>"description": "<%message%>"}<%={{ }}=%>,
+{{/responses}}
+    },
+    tags=[{{#tags}}"{{name}}"{{^-last}}, {{/-last}}{{/tags}}],
+    summary="{{summary}}",
+    response_model_by_alias=True,
+)
+async def {{operationId}}(
+{{#allParams}}
+    {{>endpoint_argument_definition}},
+{{/allParams}}
+{{#hasAuthMethods}}{{#authMethods}}
+    token_{{name}}: TokenModel = Security(get_token_{{name}}{{#isOAuth}}, scopes=[{{#scopes}}"{{scope}}"{{^-last}}, {{/-last}}{{/scopes}}]{{/isOAuth}}),
+{{/authMethods}}{{/hasAuthMethods}}
+) -> Response:
+{{#hasAuthMethods}}
+    allowed_roles = [
+{{#vendorExtensions.x-roles}}
+        "{{.}}",
+{{/vendorExtensions.x-roles}}
+    ]
+{{#authMethods}}
+    require_roles(token_{{name}}, allowed_roles)
+{{/authMethods}}{{/hasAuthMethods}}
+    if not Base{{classname}}.subclasses:
+        raise HTTPException(status_code=500, detail="Not implemented")
+    implementation = Base{{classname}}.subclasses[0]({{#hasAuthMethods}}{{#authMethods}}token_{{name}}=token_{{name}}{{^-last}}, {{/-last}}{{/authMethods}}{{/hasAuthMethods}})
+    result = await implementation.{{operationId}}({{#allParams}}{{>impl_argument}}{{^-last}}, {{/-last}}{{/allParams}})
+    response = contract_response(result, {{returnType}}{{^returnType}}None{{/returnType}}, {{#responses}}{{#is2xx}}{{code}}{{/is2xx}}{{/responses}})
+{{#vendorExtensions.x-resource-location}}
+    response.headers["Location"] = "{{{vendorExtensions.x-resource-location}}}".format(id=result.id)
+{{/vendorExtensions.x-resource-location}}
+    return response
+
+{{/operation}}{{/operations}}

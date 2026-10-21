@@ -6,8 +6,8 @@ info:
   description: |-
     Контракт API домашнего задания №2. Единственный источник HTTP-контракта — этот файл.
     JSON-запросы, UUID, UTC/RFC3339-даты. Денежные значения передаются JSON-числами с точностью до 0.01; в бизнес-логике требуется Decimal, в БД — DECIMAL(12,2). format: decimal сам по себе не гарантирует тип Python: тип, ограничения и JSON-сериализацию необходимо проверить после генерации.
-    Все CRUD и бизнес-операции требуют access JWT. /health и /auth/* публичны. x-roles документирует разрешённые роли, но не заменяет проверку в коде. Все ответы содержат X-Request-Id. Все ошибки имеют ErrorResponse.
-    Принятые допущения: процентная скидка ограничивается 70%; истёкший/отключённый промокод при PUT заказа даёт 422 и откат; собственное использование не блокирует повторную проверку промокода. Эти неоднозначности исходного задания требуют согласования до реализации. Публичных методов оплаты, доставки и произвольной смены статуса в задании нет; они не добавляются.
+    Все CRUD и бизнес-операции требуют access JWT. /health и /auth/* публичны. x-roles документирует разрешённые роли, но не заменяет проверку в коде. Все ответы содержат X-Request-Id. Все ошибки имеют ErrorResponse, включая NOT_FOUND для неизвестного маршрута и METHOD_NOT_ALLOWED для неподдерживаемого HTTP-метода.
+    Процентная скидка применяется до 70% включительно; при большем проценте скидка нулевая и оплачивается полная сумма («в ином случае цена 100%»). Истёкший/отключённый промокод при PUT заказа даёт 422 и откат; собственное использование не блокирует повторную проверку промокода. Публичных методов оплаты, доставки и произвольной смены статуса в задании нет; они не добавляются.
 tags:
 - name: Health
   description: Проверка процесса API.
@@ -143,6 +143,7 @@ paths:
       tags:
       - Products
       operationId: create_product
+      x-resource-location: /products/{id}
       summary: Создать товар
       description: 'SELLER создаёт только свои товары: seller_id отсутствует или равен sub. ADMIN может указать
         seller_id другого существующего SELLER/ADMIN. Если seller_id не указан, используется sub. USER получает
@@ -319,6 +320,7 @@ paths:
       - Orders
       operationId: create_order
       summary: Создать заказ
+      x-resource-location: /orders/{id}
       description: |-
         Доступно USER и ADMIN, SELLER получает ACCESS_DENIED. user_id берётся из sub; создать заказ от чужого имени нельзя.
         После авторизации и структурной валидации проверки выполняются строго по порядку:
@@ -328,7 +330,7 @@ paths:
         4. Все остатки достаточны: иначе INSUFFICIENT_STOCK со всеми проблемными товарами в details.products.
         5. Зарезервировать stock, сохранить price_at_order для каждой позиции.
         6. Сумма до скидки = SUM(price_at_order * quantity).
-        7. Для промокода проверить active, лимит использований и включительный интервал valid_from..valid_until; иначе PROMO_CODE_INVALID. Затем проверить min_order_amount; иначе PROMO_CODE_MIN_AMOUNT. Процентная скидка ограничивается 70% суммы; фиксированная — суммой заказа. Округление скидки до двух знаков: ROUND_HALF_UP. Сохранить discount_amount и сумму после скидки, увеличить current_uses.
+        7. Для промокода проверить active, лимит использований и включительный интервал valid_from..valid_until; иначе PROMO_CODE_INVALID. Затем проверить min_order_amount; иначе PROMO_CODE_MIN_AMOUNT. При проценте до 70 включительно применить процентную скидку; при проценте больше 70 скидка нулевая и цена полная. Фиксированная скидка не больше суммы заказа. Округление скидки до двух знаков: ROUND_HALF_UP. Сохранить discount_amount и сумму после скидки, увеличить current_uses.
         8. Сохранить заказ CREATED и успешную CREATE_ORDER.
         Все изменения, включая промокод и журнал операций, выполняются в одной транзакции. Любая ошибка откатывает всё. Ограничения сохраняются при конкурентных запросах. Денежные результаты должны помещаться в DECIMAL(12,2); переполнение возвращает VALIDATION_ERROR без изменений. Дубликаты product_id запрещены.
       x-roles:
@@ -507,8 +509,9 @@ paths:
       operationId: create_promo_code
       summary: Создать промокод
       description: 'Доступно SELLER и ADMIN; USER получает ACCESS_DENIED. code уникален с учётом регистра.
-        current_uses задаётся сервером и равен нулю. valid_until должно быть позже valid_from, иначе VALIDATION_ERROR
-        с указанием поля. active по умолчанию true. Принятое допущение: промокоды глобальные, без привязки
+        current_uses задаётся сервером и равен нулю. Обе даты должны содержать часовой пояс, а valid_until
+        должно быть позже valid_from, иначе VALIDATION_ERROR с указанием поля. active по умолчанию true.
+        Повтор code даёт PROMO_CODE_ALREADY_EXISTS. Принятое допущение: промокоды глобальные, без привязки
         к продавцу или его товарам.'
       x-roles:
       - SELLER
@@ -566,6 +569,7 @@ components:
         type: integer
         format: int32
         minimum: 0
+        maximum: 2147483647
         default: 0
     Size:
       name: size
@@ -576,6 +580,7 @@ components:
         type: integer
         format: int32
         minimum: 1
+        maximum: 2147483647
         default: 20
     ProductStatusFilter:
       name: status
@@ -593,6 +598,7 @@ components:
         type: string
         minLength: 1
         maxLength: 100
+        pattern: '^[^\x00]*$'
         example: ELECTRONICS
   headers:
     RequestId:
@@ -1020,6 +1026,9 @@ components:
       - INVALID_CREDENTIALS
       - PROMO_CODE_ALREADY_EXISTS
       - INTERNAL_ERROR
+      - NOT_FOUND
+      - METHOD_NOT_ALLOWED
+      - HTTP_ERROR
       description: |-
         PRODUCT_NOT_FOUND — HTTP 404: Товар не найден.
         PRODUCT_INACTIVE — HTTP 409: Товар не находится в состоянии ACTIVE.
@@ -1040,6 +1049,9 @@ components:
         INVALID_CREDENTIALS — HTTP 401: Неверное имя пользователя или пароль.
         PROMO_CODE_ALREADY_EXISTS — HTTP 409: Промокод с таким кодом уже существует.
         INTERNAL_ERROR — HTTP 500: Внутренняя ошибка сервера.
+        NOT_FOUND — HTTP 404: Маршрут не найден.
+        METHOD_NOT_ALLOWED — HTTP 405: HTTP-метод не поддерживается маршрутом; заголовок Allow сохранён.
+        HTTP_ERROR — HTTP 4xx: Прочая ошибка HTTP с общей структурой ответа.
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -1070,11 +1082,13 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+          pattern: '^[^\x00]*$'
           example: Беспроводная мышь
         description:
           type: string
           nullable: true
           maxLength: 4000
+          pattern: '^[^\x00]*$'
           example: Компактная мышь с USB-приёмником
         price:
           type: number
@@ -1087,11 +1101,13 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
           example: 15
         category:
           type: string
           minLength: 1
           maxLength: 100
+          pattern: '^[^\x00]*$'
           example: ELECTRONICS
         status:
           $ref: '#/components/schemas/ProductStatus'
@@ -1116,11 +1132,13 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+          pattern: '^[^\x00]*$'
           example: Беспроводная мышь
         description:
           type: string
           nullable: true
           maxLength: 4000
+          pattern: '^[^\x00]*$'
           example: Компактная мышь с USB-приёмником
         price:
           type: number
@@ -1133,11 +1151,13 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
           example: 15
         category:
           type: string
           minLength: 1
           maxLength: 100
+          pattern: '^[^\x00]*$'
           example: ELECTRONICS
         status:
           $ref: '#/components/schemas/ProductStatus'
@@ -1167,11 +1187,13 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+          pattern: '^[^\x00]*$'
           example: Беспроводная мышь
         description:
           type: string
           nullable: true
           maxLength: 4000
+          pattern: '^[^\x00]*$'
           example: Компактная мышь с USB-приёмником
         price:
           type: number
@@ -1184,11 +1206,13 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
           example: 15
         category:
           type: string
           minLength: 1
           maxLength: 100
+          pattern: '^[^\x00]*$'
           example: ELECTRONICS
         status:
           $ref: '#/components/schemas/ProductStatus'
@@ -1239,10 +1263,12 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
         size:
           type: integer
           format: int32
           minimum: 1
+          maximum: 2147483647
       example:
         items:
         - id: 11111111-1111-4111-8111-111111111111
@@ -1288,6 +1314,7 @@ components:
           minItems: 1
           maxItems: 50
           description: Новый состав заказа. product_id не должен повторяться; дубликаты дают VALIDATION_ERROR.
+          x-unique-by: product_id
         promo_code:
           type: string
           pattern: ^[A-Z0-9_]{4,20}$
@@ -1312,6 +1339,7 @@ components:
           minItems: 1
           maxItems: 50
           description: Новый состав заказа. product_id не должен повторяться; дубликаты дают VALIDATION_ERROR.
+          x-unique-by: product_id
       description: Полностью заменяет позиции. Передать или заменить промокод через этот метод нельзя.
       example:
         items:
@@ -1452,8 +1480,8 @@ components:
           maximum: 9999999999.99
           multipleOf: 0.01
           example: 10
-          description: Процент или фиксированная сумма. Процентная скидка ограничивается 70% суммы заказа;
-            см. допущения API.
+          description: Процент или фиксированная сумма. Процент до 70 включительно даёт скидку;
+            при проценте больше 70 оплачивается полная сумма заказа.
         min_order_amount:
           type: number
           format: decimal
@@ -1465,6 +1493,7 @@ components:
           type: integer
           format: int32
           minimum: 1
+          maximum: 2147483647
           example: 100
         valid_from:
           type: string
@@ -1478,7 +1507,7 @@ components:
           type: boolean
           default: true
           example: true
-      description: valid_until должно быть позже valid_from; проверка межполевая. active по умолчанию true.
+      description: Обе даты содержат часовой пояс; valid_until позже valid_from. active по умолчанию true.
     PromoCodeResponse:
       type: object
       additionalProperties: false
@@ -1514,8 +1543,8 @@ components:
           maximum: 9999999999.99
           multipleOf: 0.01
           example: 10
-          description: Процент или фиксированная сумма. Процентная скидка ограничивается 70% суммы заказа;
-            см. допущения API.
+          description: Процент или фиксированная сумма. Процент до 70 включительно даёт скидку;
+            при проценте больше 70 оплачивается полная сумма заказа.
         min_order_amount:
           type: number
           format: decimal
@@ -1527,6 +1556,7 @@ components:
           type: integer
           format: int32
           minimum: 1
+          maximum: 2147483647
           example: 100
         valid_from:
           type: string
@@ -1544,6 +1574,7 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
           readOnly: true
           example: 0
       example:
