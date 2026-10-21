@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: .
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  codegen:
+    image: openapitools/openapi-generator-cli:v7.12.0
+    profiles:
+      - tools
+    volumes:
+      - .:/workspace
+    command:
+      - generate
+      - -i
+      - /workspace/openapi/marketplace.yaml
+      - -g
+      - python-fastapi
+      - -c
+      - /workspace/openapi/generator-config.yaml
+      - -o
+      - /workspace/generated

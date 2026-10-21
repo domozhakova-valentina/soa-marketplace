@@ -1,0 +1,35 @@
+openapi: 3.0.3
+
+info:
+  title: Marketplace API
+  version: 0.1.0
+
+tags:
+  - name: Health
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      operationId: get_health
+      summary: Проверка работы приложения
+      responses:
+        "200":
+          description: Приложение работает
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok

@@ -1,0 +1,5 @@
+services:
+  payment-service:
+    build: ./services/payment-service
+    ports:
+      - "8000:8000"
