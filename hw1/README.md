@@ -233,15 +233,19 @@ User Service и Notification Service выделены отдельно в обо
 
 ### Запуск
 
-1. Склонируйте репозиторий и перейдите в его корневую папку:
+1. Склонируйте репозиторий и перейдите в папку первого домашнего задания:
 
    ```bash
 
    git clone https://github.com/domozhakova-valentina/soa-marketplace.git
 
-   cd soa-marketplace
+   cd soa-marketplace/hw1
 
    ```
+
+   Если репозиторий уже скачан, из его корневой папки выполните `cd hw1`.
+
+   Все команды Docker Compose ниже выполняются из папки `hw1`, где находится файл `docker-compose.yml`.
 
 2. Соберите образ и запустите сервис:
 
@@ -303,7 +307,7 @@ docker compose logs payment-service
 
 ### Остановка
 
-Из корневой папки репозитория выполните:
+Из папки `hw1` выполните:
 
 ```bash
 
